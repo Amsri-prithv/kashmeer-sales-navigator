@@ -8,7 +8,7 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- Leaflet CSS & JS (100% Free OpenStreetMap) -->
+  <!-- Leaflet CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   
@@ -77,7 +77,7 @@
       <div>
         <h1 class="text-sm font-bold tracking-tight flex items-center gap-1.5">
           Kashmeer Sales OS
-          <span class="bg-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0.5 rounded font-mono">LIVE GPS</span>
+          <span class="bg-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0.5 rounded font-mono">ROAD ROUTING</span>
         </h1>
         <p class="text-[11px] text-slate-400">Coimbatore District B2B Navigator</p>
       </div>
@@ -166,24 +166,23 @@
             <div>
               <label class="text-[10px] text-slate-500 font-semibold uppercase">Max Stops</label>
               <select id="route-max-stops" onchange="generateOptimizedRoute()" class="w-full text-xs bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-emerald-500">
-                <option value="6">6 Stops (~2-3 hrs)</option>
+                <option value="5">5 Stops (~2 hrs)</option>
                 <option value="8" selected>8 Stops (~4 hrs)</option>
                 <option value="12">12 Stops (Full Day)</option>
-                <option value="20">20 Stops (Max)</option>
               </select>
             </div>
           </div>
 
           <button onclick="generateOptimizedRoute()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition">
-            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Optimize Route from Current GPS
+            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Optimize Road Route from Current GPS
           </button>
         </div>
 
         <!-- Route Summary Bar -->
         <div id="route-metrics-bar" class="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg px-3 py-2 text-xs flex items-center justify-between shrink-0 font-medium">
           <span>Stops: <strong id="route-total-stops">0</strong></span>
-          <span>Distance: <strong id="route-total-km">0 km</strong></span>
-          <span>Est. Time: <strong id="route-total-time">0 min</strong></span>
+          <span>Road Dist: <strong id="route-total-km">0 km</strong></span>
+          <span>Drive Time: <strong id="route-total-time">0 min</strong></span>
         </div>
 
         <!-- Stops Sequence List -->
@@ -215,7 +214,6 @@
     <div class="flex-1 relative h-full">
       <div id="map"></div>
 
-      <!-- Floating Proximity Action Button -->
       <button onclick="findNearestLeadsFromGPS()" class="absolute top-4 right-4 z-10 bg-white/95 hover:bg-white text-slate-900 border border-slate-300 shadow-xl px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 backdrop-blur transition active:scale-95">
         <span class="relative flex h-2.5 w-2.5">
           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -317,7 +315,7 @@
     </div>
   </div>
 
-  <!-- APPLICATION LOGIC & 101 EMBEDDED LEADS -->
+  <!-- APPLICATION LOGIC & REAL ROAD ROUTING (OSRM) -->
   <script>
     let leadsData = [
       {"lead_id": "KF-CBE-001", "name": "PSG Hospitals", "category": "Multi-Speciality Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Peelamedu", "city": "Coimbatore", "address": "Avinashi Rd, Peelamedu, Coimbatore - 641004", "phone": "+91 422 434 5353", "website": "https://www.psghospitals.com/", "rating": 4.1, "reviews": 5612, "lat": 11.0245, "lng": 77.0028, "lead_status": "🟢 NEW", "product_recommendation": "Premium & Standard 5L Cans + Restroom Auto-Dispensers"},
@@ -353,7 +351,7 @@
     let userLng = 76.96530;
     let map = null;
     let markersLayer = null;
-    let routePolyline = null;
+    let routeGeoJsonLayer = null;
     let userMarker = null;
     let activeLeadId = null;
     let activePriorityFilter = 'ALL';
@@ -368,6 +366,7 @@
       generateOptimizedRoute();
       renderLeadsList(leadsData);
       updateKPICounters();
+      if (appsScriptUrl) syncWithGoogleSheet();
     });
 
     function initMap() {
@@ -442,6 +441,7 @@
         if (areaFilter === 'South') return ['singanallur', 'ramanathapuram', 'sundarapuram'].some(k => l.area.toLowerCase().includes(k));
         if (areaFilter === 'Pollachi') return ['pollachi', 'kinathukadavu', 'othakkalmandapam'].some(k => l.area.toLowerCase().includes(k) || l.city.toLowerCase().includes(k));
         if (areaFilter === 'East') return ['neelambur', 'sulur', 'chinniyampalayam'].some(k => l.area.toLowerCase().includes(k) || l.city.toLowerCase().includes(k));
+        if (areaFilter === 'MTP') return ['mettupalayam', 'karamadai', 'valparai'].some(k => l.area.toLowerCase().includes(k) || l.city.toLowerCase().includes(k));
         return true;
       });
 
@@ -471,7 +471,7 @@
       }
 
       renderRouteUI(route, totalDist);
-      plotRouteOnMap(route);
+      plotRealRoadRoute(route);
     }
 
     function renderRouteUI(route, totalDist) {
@@ -479,7 +479,7 @@
       container.innerHTML = '';
       document.getElementById('route-total-stops').textContent = route.length;
       document.getElementById('route-total-km').textContent = totalDist.toFixed(1) + ' km';
-      document.getElementById('route-total-time').textContent = Math.round((totalDist / 25) * 60 + route.length * 20) + ' min';
+      document.getElementById('route-total-time').textContent = Math.round((totalDist / 25) * 60 + route.length * 15) + ' min';
 
       route.forEach((item, idx) => {
         const l = item.lead;
@@ -512,16 +512,16 @@
       lucide.createIcons();
     }
 
-    function plotRouteOnMap(route) {
+    async function plotRealRoadRoute(route) {
       if (!markersLayer) return;
       markersLayer.clearLayers();
-      if (routePolyline) map.removeLayer(routePolyline);
+      if (routeGeoJsonLayer) map.removeLayer(routeGeoJsonLayer);
 
-      let latlngs = [[userLat, userLng]];
+      let coordList = [[userLng, userLat]];
 
       route.forEach((item, idx) => {
         const l = item.lead;
-        latlngs.push([l.lat, l.lng]);
+        coordList.push([l.lng, l.lat]);
         
         let markerClass = 'marker-hot';
         if (l.lead_status.includes('VISITED')) markerClass = 'marker-visited';
@@ -542,9 +542,47 @@
         markersLayer.addLayer(marker);
       });
 
-      if (latlngs.length > 1) {
-        routePolyline = L.polyline(latlngs, { color: '#2563eb', weight: 4, opacity: 0.8, dashArray: '6, 6' }).addTo(map);
-        map.fitBounds(routePolyline.getBounds(), { padding: [40, 40] });
+      if (coordList.length > 1) {
+        const coordsString = coordList.map(c => c[0].toFixed(5) + ',' + c.toFixed(5)).join(';');
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`;
+
+        try {
+          const response = await fetch(osrmUrl);
+          const data = await response.json();
+          
+          if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+            const geojsonFeature = {
+              type: 'Feature',
+              properties: {},
+              geometry: data.routes[0].geometry
+            };
+
+            routeGeoJsonLayer = L.geoJSON(geojsonFeature, {
+              style: {
+                color: '#2563eb',
+                weight: 5,
+                opacity: 0.9,
+                lineJoin: 'round',
+                lineCap: 'round'
+              }
+            }).addTo(map);
+
+            const realKm = (data.routes[0].distance / 1000).toFixed(1);
+            const realDriveMin = Math.round(data.routes[0].duration / 60);
+            
+            document.getElementById('route-total-km').textContent = realKm + ' km';
+            document.getElementById('route-total-time').textContent = realDriveMin + ' min';
+
+            map.fitBounds(routeGeoJsonLayer.getBounds(), { padding: [40, 40] });
+            return;
+          }
+        } catch (e) {
+          console.warn("OSRM road routing notice:", e);
+        }
+
+        let latlngs = coordList.map(c => [c[1], c[0]]);
+        routeGeoJsonLayer = L.polyline(latlngs, { color: '#2563eb', weight: 4, opacity: 0.8, dashArray: '6, 6' }).addTo(map);
+        map.fitBounds(routeGeoJsonLayer.getBounds(), { padding: [40, 40] });
       }
     }
 
@@ -704,7 +742,7 @@
 
     async function syncWithGoogleSheet() {
       const icon = document.getElementById('sync-icon');
-      icon.classList.add('animate-spin');
+      if (icon) icon.classList.add('animate-spin');
       try {
         const res = await fetch(appsScriptUrl);
         const data = await res.json();
@@ -714,17 +752,35 @@
             if (local) {
               if (remoteLead.lead_status) local.lead_status = remoteLead.lead_status;
               if (remoteLead.notes) local.notes = remoteLead.notes;
+            } else {
+              leadsData.push({
+                lead_id: remoteLead.lead_id || ('KF-CBE-' + (leadsData.length + 1)),
+                name: remoteLead.business_name || remoteLead.name || 'New Business',
+                category: remoteLead.category || remoteLead.business_category || 'Commercial',
+                priority_class: remoteLead.priority_class || remoteLead.priority || '🔥 HOT',
+                score: parseInt(remoteLead.score || 85),
+                area: remoteLead.area || remoteLead.area_locality || 'Coimbatore',
+                city: remoteLead.city || 'Coimbatore',
+                address: remoteLead.address || remoteLead.full_address || '',
+                phone: remoteLead.phone || remoteLead.phone_number || '',
+                website: remoteLead.website || '',
+                rating: parseFloat(remoteLead.rating || 4.5),
+                reviews: parseInt(remoteLead.reviews || remoteLead.review_count || 100),
+                lat: parseFloat(remoteLead.lat || remoteLead.latitude || 11.01),
+                lng: parseFloat(remoteLead.lng || remoteLead.longitude || 76.96),
+                lead_status: remoteLead.lead_status || '🟢 NEW',
+                product_recommendation: remoteLead.product_recommendation || remoteLead.product_rec || 'Premium 5L Fragrance Can'
+              });
             }
           });
           generateOptimizedRoute();
           filterLeadsList();
           updateKPICounters();
-          alert("Synced successfully with Google Sheet!");
         }
       } catch (e) {
-        alert("Sync triggered with Google Sheet!");
+        console.warn("Sync notice:", e);
       } finally {
-        icon.classList.remove('animate-spin');
+        if (icon) icon.classList.remove('animate-spin');
       }
     }
   </script>
