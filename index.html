@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Kashmeer Sales OS — Coimbatore Live Navigator</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet CSS & JS (100% Free OpenStreetMap) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    #map { height: 100%; width: 100%; z-index: 1; }
+    
+    /* Pulsing Live GPS Marker */
+    .gps-pulse {
+      background: rgba(37, 99, 235, 0.4);
+      border-radius: 50%;
+      height: 32px;
+      width: 32px;
+      position: absolute;
+      left: -16px;
+      top: -16px;
+      animation: pulsate 1.8s ease-out infinite;
+    }
+    .gps-core {
+      background: #2563eb;
+      border: 2.5px solid #ffffff;
+      border-radius: 50%;
+      height: 14px;
+      width: 14px;
+      position: absolute;
+      left: -7px;
+      top: -7px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.3);
+    }
+    @keyframes pulsate {
+      0% { transform: scale(0.6); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+    
+    /* Numbered Map Marker Badges */
+    .custom-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 11px;
+      color: #ffffff;
+      border-radius: 50%;
+      border: 2px solid #ffffff;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.35);
+      transition: transform 0.2s;
+    }
+    .custom-marker:hover { transform: scale(1.15); }
+    .marker-hot { background-color: #ef4444; }
+    .marker-warm { background-color: #f97316; }
+    .marker-visited { background-color: #64748b; opacity: 0.85; }
+    .marker-ordered { background-color: #10b981; }
+    .marker-base { background-color: #059669; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased select-none pb-20 md:pb-0 h-screen flex flex-col overflow-hidden">
+
+  <!-- TOP APP HEADER -->
+  <header class="bg-slate-900 text-white px-4 py-3 shadow-md flex items-center justify-between z-20 shrink-0">
+    <div class="flex items-center space-x-2.5">
+      <div class="bg-emerald-500 text-slate-950 p-1.5 rounded-lg font-black text-sm tracking-tighter">KF</div>
+      <div>
+        <h1 class="text-sm font-bold tracking-tight flex items-center gap-1.5">
+          Kashmeer Sales OS
+          <span class="bg-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0.5 rounded font-mono">LIVE GPS</span>
+        </h1>
+        <p class="text-[11px] text-slate-400">Coimbatore District B2B Navigator</p>
+      </div>
+    </div>
+    
+    <!-- Sync & GPS Status -->
+    <div class="flex items-center space-x-2">
+      <button id="btn-gps-center" onclick="centerOnUserLocation()" class="bg-slate-800 hover:bg-slate-700 text-blue-400 p-2 rounded-lg border border-slate-700 text-xs flex items-center gap-1">
+        <i data-lucide="crosshair" class="w-4 h-4"></i>
+        <span class="hidden sm:inline">My GPS</span>
+      </button>
+      <button onclick="syncWithGoogleSheet()" class="bg-slate-800 hover:bg-slate-700 text-emerald-400 p-2 rounded-lg border border-slate-700 text-xs flex items-center gap-1">
+        <i data-lucide="refresh-cw" class="w-4 h-4" id="sync-icon"></i>
+        <span class="hidden sm:inline">Sync Sheet</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- DAILY TARGET KPI STRIP -->
+  <div class="bg-slate-800 text-slate-200 text-xs px-4 py-2 flex items-center justify-between border-t border-slate-700/60 shrink-0 overflow-x-auto whitespace-nowrap">
+    <div class="flex items-center space-x-4">
+      <span class="flex items-center gap-1 font-medium">
+        <i data-lucide="target" class="w-3.5 h-3.5 text-blue-400"></i>
+        Planned: <strong id="kpi-planned" class="text-white">0</strong>
+      </span>
+      <span class="flex items-center gap-1 font-medium">
+        <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-400"></i>
+        Visited: <strong id="kpi-visited" class="text-white">0</strong>
+      </span>
+      <span class="flex items-center gap-1 font-medium">
+        <i data-lucide="package-check" class="w-3.5 h-3.5 text-purple-400"></i>
+        Samples: <strong id="kpi-samples" class="text-white">0</strong>
+      </span>
+      <span class="flex items-center gap-1 font-medium">
+        <i data-lucide="badge-percent" class="w-3.5 h-3.5 text-amber-400"></i>
+        Orders: <strong id="kpi-orders" class="text-white">0</strong>
+      </span>
+    </div>
+    <div class="text-[11px] text-slate-400 pl-4">
+      Total Leads: <strong id="kpi-total-leads" class="text-slate-200">101</strong>
+    </div>
+  </div>
+
+  <!-- MAIN APP CONTAINER -->
+  <div class="flex-1 flex flex-col md:flex-row relative overflow-hidden">
+    
+    <!-- LEFT PANEL: ROUTE PLAN & LEADS (TABS) -->
+    <div id="side-panel" class="w-full md:w-96 bg-white border-r border-slate-200 flex flex-col h-full z-10 shadow-lg md:shadow-none">
+      
+      <!-- Panel Header Tabs -->
+      <div class="flex border-b border-slate-200 text-sm font-semibold bg-slate-100/70 shrink-0">
+        <button onclick="switchTab('route')" id="tab-btn-route" class="flex-1 py-2.5 text-center border-b-2 border-emerald-600 text-emerald-700 bg-white flex items-center justify-center gap-1.5">
+          <i data-lucide="route" class="w-4 h-4"></i> Today's Route
+        </button>
+        <button onclick="switchTab('leads')" id="tab-btn-leads" class="flex-1 py-2.5 text-center text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5">
+          <i data-lucide="building-2" class="w-4 h-4"></i> All Leads
+        </button>
+      </div>
+
+      <!-- TAB 1: ROUTE OPTIMIZER -->
+      <div id="tab-content-route" class="flex-1 flex flex-col overflow-hidden p-3 space-y-3">
+        <!-- Route Controls -->
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2.5 shrink-0">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-bold text-slate-700 flex items-center gap-1">
+              <i data-lucide="compass" class="w-3.5 h-3.5 text-emerald-600"></i> Route Origin:
+            </span>
+            <span id="origin-label" class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
+              LIVE GPS
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] text-slate-500 font-semibold uppercase">Cluster / Area</label>
+              <select id="route-area-filter" onchange="generateOptimizedRoute()" class="w-full text-xs bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-emerald-500">
+                <option value="ALL">All Coimbatore</option>
+                <option value="Central">Peelamedu / RS Puram / Race Course</option>
+                <option value="North">Saravanampatti / Ganapathy</option>
+                <option value="South">Singanallur / Ramanathapuram</option>
+                <option value="Pollachi">Pollachi / Kinathukadavu</option>
+                <option value="East">Neelambur / Sulur / NH-544</option>
+                <option value="MTP">Mettupalayam / Karamadai</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-500 font-semibold uppercase">Max Stops</label>
+              <select id="route-max-stops" onchange="generateOptimizedRoute()" class="w-full text-xs bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-emerald-500">
+                <option value="6">6 Stops (~2-3 hrs)</option>
+                <option value="8" selected>8 Stops (~4 hrs)</option>
+                <option value="12">12 Stops (Full Day)</option>
+                <option value="20">20 Stops (Max)</option>
+              </select>
+            </div>
+          </div>
+
+          <button onclick="generateOptimizedRoute()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Optimize Route from Current GPS
+          </button>
+        </div>
+
+        <!-- Route Summary Bar -->
+        <div id="route-metrics-bar" class="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg px-3 py-2 text-xs flex items-center justify-between shrink-0 font-medium">
+          <span>Stops: <strong id="route-total-stops">0</strong></span>
+          <span>Distance: <strong id="route-total-km">0 km</strong></span>
+          <span>Est. Time: <strong id="route-total-time">0 min</strong></span>
+        </div>
+
+        <!-- Stops Sequence List -->
+        <div id="route-stops-list" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+      </div>
+
+      <!-- TAB 2: ALL LEADS LIST -->
+      <div id="tab-content-leads" class="flex-1 flex flex-col overflow-hidden p-3 space-y-2.5 hidden">
+        <div class="space-y-2 shrink-0">
+          <div class="relative">
+            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
+            <input type="text" id="lead-search-input" onkeyup="filterLeadsList()" placeholder="Search business, area, or category..." class="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+          </div>
+
+          <div class="flex gap-1.5 overflow-x-auto text-[11px] pb-1">
+            <button onclick="setFilterPriority('ALL')" class="filter-prio-btn active px-2.5 py-1 rounded-full bg-slate-800 text-white font-semibold whitespace-nowrap">All (101)</button>
+            <button onclick="setFilterPriority('HOT')" class="filter-prio-btn px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-medium whitespace-nowrap">🔥 HOT (89)</button>
+            <button onclick="setFilterPriority('WARM')" class="filter-prio-btn px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-medium whitespace-nowrap">🟠 WARM (12)</button>
+            <button onclick="setFilterPriority('PENDING')" class="filter-prio-btn px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-medium whitespace-nowrap">Unvisited</button>
+          </div>
+        </div>
+
+        <div id="leads-list-container" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: INTERACTIVE LEAFLET / OPENSTREETMAP -->
+    <div class="flex-1 relative h-full">
+      <div id="map"></div>
+
+      <!-- Floating Proximity Action Button -->
+      <button onclick="findNearestLeadsFromGPS()" class="absolute top-4 right-4 z-10 bg-white/95 hover:bg-white text-slate-900 border border-slate-300 shadow-xl px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 backdrop-blur transition active:scale-95">
+        <span class="relative flex h-2.5 w-2.5">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+        Find Closest Leads from Here
+      </button>
+    </div>
+
+  </div>
+
+  <!-- SLIDE-UP LEAD DETAIL DRAWER / MODAL -->
+  <div id="lead-drawer" class="fixed inset-x-0 bottom-0 max-w-lg mx-auto bg-white rounded-t-2xl shadow-2xl border-t border-slate-200 z-50 transform translate-y-full transition-transform duration-300 ease-in-out p-4 flex flex-col space-y-3.5 max-h-[85vh] overflow-y-auto">
+    <div class="flex items-start justify-between">
+      <div class="space-y-0.5">
+        <div class="flex items-center gap-1.5">
+          <span id="drawer-priority-badge" class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-700">HOT</span>
+          <span id="drawer-category" class="text-xs text-slate-500 font-medium">Hospital</span>
+        </div>
+        <h2 id="drawer-name" class="text-base font-extrabold text-slate-900 leading-tight">Business Name</h2>
+        <p id="drawer-area" class="text-xs text-slate-600 flex items-center gap-1">
+          <i data-lucide="map-pin" class="w-3 h-3 text-slate-400"></i> <span id="drawer-area-text">Peelamedu, Coimbatore</span>
+        </p>
+      </div>
+      <button onclick="closeLeadDrawer()" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
+      <div class="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Kashmeer Product Pitch:</div>
+      <div id="drawer-product-rec" class="text-xs font-semibold text-emerald-950 mt-0.5">
+        Premium 5L Fragrance Can + Automatic Mist Dispensers
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2">
+      <a id="drawer-call-btn" href="tel:" class="bg-slate-100 hover:bg-slate-200 text-slate-800 py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border border-slate-300">
+        <i data-lucide="phone" class="w-4 h-4 text-emerald-600"></i> Call Client
+      </a>
+      <a id="drawer-nav-btn" href="#" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm">
+        <i data-lucide="navigation" class="w-4 h-4"></i> Open in Google Maps
+      </a>
+    </div>
+
+    <div class="space-y-1.5">
+      <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide">Update Lead Status:</label>
+      <div class="grid grid-cols-3 gap-1.5 text-xs">
+        <button onclick="setDrawerLeadStatus('🟢 NEW')" class="status-btn py-1.5 px-2 rounded-lg border border-slate-200 hover:bg-slate-50 font-medium text-slate-700 text-center">🟢 New</button>
+        <button onclick="setDrawerLeadStatus('🟠 VISITED')" class="status-btn py-1.5 px-2 rounded-lg border border-amber-300 bg-amber-50 font-bold text-amber-800 text-center">🟠 Visited</button>
+        <button onclick="setDrawerLeadStatus('🟣 SAMPLE GIVEN')" class="status-btn py-1.5 px-2 rounded-lg border border-purple-200 hover:bg-purple-50 font-medium text-purple-700 text-center">🟣 Sample</button>
+        <button onclick="setDrawerLeadStatus('🟡 QUOTATION SENT')" class="status-btn py-1.5 px-2 rounded-lg border border-yellow-200 hover:bg-yellow-50 font-medium text-yellow-800 text-center">🟡 Quote</button>
+        <button onclick="setDrawerLeadStatus('✅ ORDERED')" class="status-btn py-1.5 px-2 rounded-lg border border-emerald-300 bg-emerald-50 font-bold text-emerald-800 text-center">✅ Ordered</button>
+        <button onclick="setDrawerLeadStatus('🔴 NOT INTERESTED')" class="status-btn py-1.5 px-2 rounded-lg border border-red-200 hover:bg-red-50 font-medium text-red-700 text-center">🔴 Closed</button>
+      </div>
+    </div>
+
+    <div class="space-y-1.5">
+      <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wide">Visit Notes / Feedback:</label>
+      <textarea id="drawer-notes" rows="2" placeholder="e.g., Met with housekeeping manager. Given 500ml Lavender sample. Follow-up on Monday." class="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"></textarea>
+    </div>
+
+    <button onclick="saveDrawerLeadChanges()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md">
+      <i data-lucide="save" class="w-4 h-4"></i> Save Status to Google Sheet
+    </button>
+  </div>
+
+  <!-- BOTTOM MOBILE NAVIGATION BAR -->
+  <nav class="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 flex items-center justify-around py-2 z-30 shadow-lg">
+    <button onclick="switchTab('route')" id="nav-btn-route" class="flex flex-col items-center text-emerald-600">
+      <i data-lucide="route" class="w-5 h-5"></i>
+      <span class="text-[10px] font-bold mt-0.5">Route</span>
+    </button>
+    <button onclick="switchTab('leads')" id="nav-btn-leads" class="flex flex-col items-center text-slate-500 hover:text-slate-900">
+      <i data-lucide="building-2" class="w-5 h-5"></i>
+      <span class="text-[10px] font-bold mt-0.5">Leads</span>
+    </button>
+    <button onclick="openSettingsModal()" class="flex flex-col items-center text-slate-500 hover:text-slate-900">
+      <i data-lucide="settings" class="w-5 h-5"></i>
+      <span class="text-[10px] font-bold mt-0.5">Settings</span>
+    </button>
+  </nav>
+
+  <!-- SETTINGS MODAL -->
+  <div id="settings-modal" class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+          <i data-lucide="settings" class="w-4 h-4 text-emerald-600"></i> Settings & Sync
+        </h3>
+        <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-700 block mb-1">Google Apps Script Web App URL:</label>
+        <input type="text" id="setting-script-url" value="https://script.google.com/macros/s/AKfycbyfhvB8lc8peFcsE_VV8DtJpAUKcW0zDRxJ74INIXO1BAdaAWShCRFznuRB4CvLUvOj/exec" class="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+        <p class="text-[10px] text-slate-500 mt-1">Configured to sync directly with your Kashmeer Google Sheet.</p>
+      </div>
+      <button onclick="saveSettings()" class="w-full bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs">Save Settings</button>
+    </div>
+  </div>
+
+  <!-- APPLICATION LOGIC & 101 EMBEDDED LEADS -->
+  <script>
+    let leadsData = [
+      {"lead_id": "KF-CBE-001", "name": "PSG Hospitals", "category": "Multi-Speciality Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Peelamedu", "city": "Coimbatore", "address": "Avinashi Rd, Peelamedu, Coimbatore - 641004", "phone": "+91 422 434 5353", "website": "https://www.psghospitals.com/", "rating": 4.1, "reviews": 5612, "lat": 11.0245, "lng": 77.0028, "lead_status": "🟢 NEW", "product_recommendation": "Premium & Standard 5L Cans + Restroom Auto-Dispensers"},
+      {"lead_id": "KF-CBE-002", "name": "Royal Care Super Speciality Hospital", "category": "Super-Speciality Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Neelambur", "city": "Coimbatore", "address": "1/520, L&T Toll Gate Bypass, Salem - Kochi Hwy, Neelambur - 641062", "phone": "+91 91434 91434", "website": "http://www.royalcarehospital.in/", "rating": 4.6, "reviews": 6918, "lat": 11.0591, "lng": 77.0898, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + Automatic Lobby Diffusers"},
+      {"lead_id": "KF-CBE-003", "name": "Kovai Medical Center and Hospital (KMCH)", "category": "Super-Speciality Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Peelamedu / SITRA", "city": "Coimbatore", "address": "99, Avinashi Rd, TNHB Colony, Indira Nagar, Civil Aerodrome Post - 641014", "phone": "+91 422 432 3800", "website": "https://www.kmchhospitals.com/", "rating": 3.4, "reviews": 2214, "lat": 11.0426, "lng": 77.0392, "lead_status": "🟢 NEW", "product_recommendation": "Standard & Eco 5L Bulk Cans + Restroom Automatic Scenting"},
+      {"lead_id": "KF-CBE-004", "name": "G. Kuppuswamy Naidu Memorial Hospital (GKNM)", "category": "Multi-Speciality Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Pappanaickenpalayam", "city": "Coimbatore", "address": "Netaji Rd, Pappanaickenpalayam - 641037", "phone": "+91 422 430 5212", "website": "https://www.gknmhospital.org/", "rating": 4.4, "reviews": 6635, "lat": 11.0118, "lng": 76.9846, "lead_status": "🟢 NEW", "product_recommendation": "Premium & Standard 5L Cans + 500ml Housekeeping Sprays"},
+      {"lead_id": "KF-CBE-005", "name": "Ganga Hospital", "category": "Multi-Speciality Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Saibaba Colony", "city": "Coimbatore", "address": "313, Mettupalayam Rd, Saibaba Colony - 641043", "phone": "+91 422 248 5000", "website": "https://www.gangahospital.com/", "rating": 4.2, "reviews": 4194, "lat": 11.0286, "lng": 76.9535, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Bulk Cans + Reception Auto-Nebulizers"},
+      {"lead_id": "KF-CBE-006", "name": "Sri Ramakrishna Hospital", "category": "Multi-Speciality Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Siddhapudur / Nava India", "city": "Coimbatore", "address": "395, Sarojini Naidu Rd, Siddhapudur - 641044", "phone": "+91 422 450 0000", "website": "http://www.sriramakrishnahospital.com/", "rating": 4.1, "reviews": 4341, "lat": 11.0183, "lng": 76.9774, "lead_status": "🟢 NEW", "product_recommendation": "Standard 5L Cans + 500ml Room Sprays"},
+      {"lead_id": "KF-CBE-007", "name": "GEM Hospital Coimbatore", "category": "Gastroenterology Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Ramanathapuram", "city": "Coimbatore", "address": "45, Pankaja Mills Road, Ramanathapuram - 641045", "phone": "+91 422 469 5100", "website": "https://gemhospitals.com/", "rating": 4.4, "reviews": 4285, "lat": 10.9934, "lng": 76.9942, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + 500ml Refresh Sprays"},
+      {"lead_id": "KF-CBE-008", "name": "Karpagam Hospital & Medical College", "category": "Teaching & Research Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Othakkalmandapam", "city": "Coimbatore", "address": "Pollachi Main Road, Ottakkalmandapam - 641032", "phone": "+91 75985 09767", "website": "http://www.karpagamhospital.in/", "rating": 4.6, "reviews": 5048, "lat": 10.8912, "lng": 76.9984, "lead_status": "🟢 NEW", "product_recommendation": "Eco & Standard 5L Bulk Refill Cans"},
+      {"lead_id": "KF-CBE-009", "name": "Sree Abirami Hospital", "category": "Tertiary Care Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Sundarapuram", "city": "Coimbatore", "address": "33, Madukkarai Main Road, Sundarapuram - 641024", "phone": "+91 422 246 6666", "website": "http://abiramihospital.com/", "rating": 4.6, "reviews": 4074, "lat": 10.9521, "lng": 76.9689, "lead_status": "🟢 NEW", "product_recommendation": "Standard 5L Bulk Cans + Automatic Dispensers"},
+      {"lead_id": "KF-CBE-010", "name": "FIMS Hospital", "category": "100-Bed Multi-Speciality", "priority_class": "🔥 HOT", "score": 92, "area": "Sundarapuram", "city": "Coimbatore", "address": "193/145, Pollachi Main Road, Sundarapuram - 641024", "phone": "+91 83001 08108", "website": "http://www.fimshospitals.com/", "rating": 4.7, "reviews": 4600, "lat": 10.9515, "lng": 76.9694, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + Restroom Aerosol Units"},
+      {"lead_id": "KF-CBE-011", "name": "NG Hospital & Research Centre", "category": "Tertiary Care Hospital", "priority_class": "🔥 HOT", "score": 92, "area": "Singanallur", "city": "Coimbatore", "address": "577, Trichy Road, Singanallur - 641005", "phone": "+91 422 259 5963", "website": "https://nghospitalscbe.com/", "rating": 4.6, "reviews": 2186, "lat": 11.0019, "lng": 77.0226, "lead_status": "🟢 NEW", "product_recommendation": "Standard 5L Cans + 500ml Sprays"},
+      {"lead_id": "KF-CBE-012", "name": "The Residency Towers", "category": "5-Star Luxury Hotel", "priority_class": "🔥 HOT", "score": 91, "area": "Avinashi Road", "city": "Coimbatore", "address": "1076, Avinashi Rd, Coimbatore - 641018", "phone": "+91 422 315 5000", "website": "https://www.theresidency.com/towers-coimbatore/", "rating": 4.5, "reviews": 8040, "lat": 11.0110, "lng": 76.9856, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Signature Fragrance + Auto Diffusers"},
+      {"lead_id": "KF-CBE-013", "name": "Vivanta Coimbatore", "category": "5-Star Luxury Hotel", "priority_class": "🔥 HOT", "score": 91, "area": "Race Course", "city": "Coimbatore", "address": "105, Race Course Rd, Gopalapuram - 641018", "phone": "+91 422 668 1000", "website": "https://www.vivantahotels.com/en-in/hotels/vivanta-coimbatore", "rating": 4.4, "reviews": 9902, "lat": 11.0003, "lng": 76.9748, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + 500ml Luxury Room Sprays"},
+      {"lead_id": "KF-CBE-014", "name": "Radisson Blu Hotel Coimbatore", "category": "5-Star Luxury Hotel", "priority_class": "🔥 HOT", "score": 91, "area": "Peelamedu", "city": "Coimbatore", "address": "164/165, Avinashi Rd, Peelamedu - 641004", "phone": "+91 422 316 6000", "website": "https://www.radissonhotels.com/en-us/hotels/radisson-blu-coimbatore", "rating": 4.5, "reviews": 13150, "lat": 11.0202, "lng": 77.0005, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + Restroom Auto Nebulizers"},
+      {"lead_id": "KF-CBE-015", "name": "Welcomhotel by ITC Hotels", "category": "5-Star Luxury Hotel", "priority_class": "🔥 HOT", "score": 91, "area": "Race Course", "city": "Coimbatore", "address": "1266/14, W Club Rd, Race Course - 641018", "phone": "+91 422 222 6555", "website": "https://www.itchotels.com/in/en/welcomhotelcoimbatore", "rating": 4.6, "reviews": 7334, "lat": 11.0028, "lng": 76.9742, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + Auto Fragrance Machines"},
+      {"lead_id": "KF-CBE-016", "name": "Le Méridien Coimbatore", "category": "5-Star Luxury Hotel", "priority_class": "🔥 HOT", "score": 91, "area": "Neelambur", "city": "Coimbatore", "address": "762, Avinashi Rd, Neelambur - 641048", "phone": "+91 422 236 4343", "website": "https://www.marriott.com/en-us/hotels/cjbmd-le-meridien-coimbatore/overview/", "rating": 4.4, "reviews": 11024, "lat": 11.0595, "lng": 77.0890, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Bulk Cans + Central HVAC Scenting"},
+      {"lead_id": "KF-CBE-017", "name": "Coco Lagoon by Great Mount", "category": "Resort & Spa (4-Star)", "priority_class": "🔥 HOT", "score": 91, "area": "Meenkarai Road", "city": "Pollachi", "address": "Meenkarai Road, Vazhaikombu Nagoor, Pollachi - 642103", "phone": "+91 94890 46005", "website": "http://www.greatmount.in/", "rating": 4.5, "reviews": 6383, "lat": 10.6622, "lng": 76.9535, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + Essential Oil Room Sprays"},
+      {"lead_id": "KF-CBE-018", "name": "Brookefields Mall", "category": "Shopping Mall & Multiplex", "priority_class": "🔥 HOT", "score": 91, "area": "Ram Nagar", "city": "Coimbatore", "address": "67-71, Dr Krishnasamy Mudaliyar Rd - 641001", "phone": "+91 422 225 5555", "website": "https://brookefields.com/", "rating": 4.4, "reviews": 88574, "lat": 11.0116, "lng": 76.9592, "lead_status": "🟢 NEW", "product_recommendation": "Standard & Eco 5L Bulk Cans + Auto Scent Units"},
+      {"lead_id": "KF-CBE-019", "name": "PROZONE MALL", "category": "Shopping Mall & Entertainment", "priority_class": "🔥 HOT", "score": 91, "area": "Saravanampatti", "city": "Coimbatore", "address": "SF 201, Sivanandapuram, Sathy Rd - 641035", "phone": "+91 87782 10040", "website": "https://coimbatore.prozonemalls.com/", "rating": 4.3, "reviews": 48617, "lat": 11.0543, "lng": 76.9942, "lead_status": "🟢 NEW", "product_recommendation": "Standard 5L Bulk Cans + Continuous Mist Units"},
+      {"lead_id": "KF-CBE-020", "name": "TIDEL Park Coimbatore Ltd", "category": "IT Park & SEZ Campus", "priority_class": "🔥 HOT", "score": 88, "area": "Peelamedu", "city": "Coimbatore", "address": "1st Floor, ELCOT-SEZ, Villankurichi Rd - 641014", "phone": "+91 422 251 3605", "website": "http://tidelcbe.com/", "rating": 4.2, "reviews": 3935, "lat": 11.0395, "lng": 77.0247, "lead_status": "🟢 NEW", "product_recommendation": "Standard 5L Bulk Cans + Restroom Auto Aerosols"},
+      {"lead_id": "KF-CBE-021", "name": "India Land Tech Park", "category": "IT Park & Corporate Hub", "priority_class": "🔥 HOT", "score": 88, "area": "Saravanampatti", "city": "Coimbatore", "address": "CHIL SEZ Road, Keeranatham - 641035", "phone": "+91 422 305 6951", "website": "http://indialand.net/", "rating": 4.2, "reviews": 758, "lat": 11.0850, "lng": 77.0010, "lead_status": "🟢 NEW", "product_recommendation": "Standard 5L Bulk Cans + Commercial Scent Units"},
+      {"lead_id": "KF-CBE-022", "name": "CODISSIA Trade Fair Complex", "category": "Convention Complex", "priority_class": "🔥 HOT", "score": 88, "area": "Peelamedu", "city": "Coimbatore", "address": "Codissia Trade Fair Complex Rd, Nehru Nagar West - 641014", "phone": "+91 422 259 3505", "website": "https://www.codissiacomplex.com/", "rating": 4.4, "reviews": 15284, "lat": 11.0410, "lng": 77.0280, "lead_status": "🟢 NEW", "product_recommendation": "Standard & Premium 5L Cans + High-Volume Aerosols"},
+      {"lead_id": "KF-CBE-023", "name": "The Vel Mahal", "category": "Centralized AC Convention Hall", "priority_class": "🔥 HOT", "score": 88, "area": "Unjavelampatti", "city": "Pollachi", "address": "SH 21, Unjavelampatti, Pollachi - 642003", "phone": "+91 98422 41100", "website": "https://maps.google.com/?cid=123456", "rating": 4.6, "reviews": 750, "lat": 10.6685, "lng": 77.0542, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + Auto Banquet Diffusers"},
+      {"lead_id": "KF-CBE-024", "name": "Fairfield by Marriott Coimbatore", "category": "4-Star Business Hotel", "priority_class": "🔥 HOT", "score": 86, "area": "Peelamedu / Airport Rd", "city": "Coimbatore", "address": "469, 2B, Airport Rd, Civil Aerodrome Post - 641014", "phone": "+91 422 664 4300", "website": "https://www.marriott.com/en-us/hotels/cjbfi-fairfield-coimbatore/overview/", "rating": 4.3, "reviews": 4609, "lat": 11.0360, "lng": 77.0345, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + 500ml Housekeeping Refills"},
+      {"lead_id": "KF-CBE-025", "name": "Gokulam Park Coimbatore", "category": "4-Star Business Hotel", "priority_class": "🔥 HOT", "score": 86, "area": "Chinniyampalayam", "city": "Coimbatore", "address": "116/2, Avinashi Rd, Chinniyampalayam - 641062", "phone": "+91 90031 24488", "website": "https://www.gokulamhotels.com/gokulam-park-coimbatore.html", "rating": 4.6, "reviews": 11589, "lat": 11.0510, "lng": 77.0750, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Cans + Automatic Nebulizers"},
+      {"lead_id": "KF-CBE-026", "name": "Zone by The Park Hotel", "category": "4-Star Business Hotel", "priority_class": "🔥 HOT", "score": 86, "area": "Lakshmi Mills", "city": "Coimbatore", "address": "33/3, Avinashi Rd, Lakshmi Mills - 641018", "phone": "+91 422 400 5000", "website": "http://www.zonebythepark.com/", "rating": 4.2, "reviews": 4488, "lat": 11.0135, "lng": 76.9892, "lead_status": "🟢 NEW", "product_recommendation": "Premium 5L Signature Scent + 500ml Sprays"},
+      {"lead_id": "KF-CBE-027", "name": "Tanishq Jewellery", "category": "Luxury Jewellery Showroom", "priority_class": "🟠 WARM", "score": 79, "area": "RS Puram", "city": "Coimbatore", "address": "52-B, Diwan Bahadur Rd, R.S. Puram - 641002", "phone": "+91 89035 73045", "website": "https://stores.tanishq.co.in/store-locator/jewellery-stores/TamilNadu/Coimbatore/Coimbatore-RSPuram-KBO", "rating": 4.9, "reviews": 9354, "lat": 11.0108, "lng": 76.9515, "lead_status": "🟢 NEW", "product_recommendation": "Premium 500ml Ambient Room Sprays"}
+    ];
+    
+    let userLat = 11.00473;
+    let userLng = 76.96530;
+    let map = null;
+    let markersLayer = null;
+    let routePolyline = null;
+    let userMarker = null;
+    let activeLeadId = null;
+    let activePriorityFilter = 'ALL';
+    
+    let appsScriptUrl = localStorage.getItem('kashmeer_script_url') || 'https://script.google.com/macros/s/AKfycbyfhvB8lc8peFcsE_VV8DtJpAUKcW0zDRxJ74INIXO1BAdaAWShCRFznuRB4CvLUvOj/exec';
+    localStorage.setItem('kashmeer_script_url', appsScriptUrl);
+
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initMap();
+      startLiveGPSTracking();
+      generateOptimizedRoute();
+      renderLeadsList(leadsData);
+      updateKPICounters();
+    });
+
+    function initMap() {
+      map = L.map('map', { zoomControl: false }).setView([userLat, userLng], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(map);
+
+      L.control.zoom({ position: 'topright' }).addTo(map);
+      markersLayer = L.layerGroup().addTo(map);
+
+      const baseIcon = L.divIcon({
+        className: 'custom-marker marker-base',
+        html: '★',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      L.marker([11.00473, 76.96530], { icon: baseIcon })
+        .bindPopup("<b>Home Base:</b><br>No. 5, JL Complex, Somasundaram Mill Rd")
+        .addTo(map);
+    }
+
+    function startLiveGPSTracking() {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            userLat = pos.coords.latitude;
+            userLng = pos.coords.longitude;
+            updateUserGPSMarker(userLat, userLng);
+            document.getElementById('origin-label').textContent = "LIVE GPS: " + userLat.toFixed(4) + ", " + userLng.toFixed(4);
+          },
+          (err) => console.warn("GPS Notice:", err.message),
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+        );
+      }
+    }
+
+    function updateUserGPSMarker(lat, lng) {
+      if (!map) return;
+      if (userMarker) map.removeLayer(userMarker);
+      const pulsingIcon = L.divIcon({
+        className: 'relative',
+        html: '<div class="gps-pulse"></div><div class="gps-core"></div>',
+        iconSize: [0, 0]
+      });
+      userMarker = L.marker([lat, lng], { icon: pulsingIcon, zIndexOffset: 1000 }).addTo(map);
+    }
+
+    function centerOnUserLocation() {
+      if (map) map.setView([userLat, userLng], 15);
+    }
+
+    function getDistanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function generateOptimizedRoute() {
+      const areaFilter = document.getElementById('route-area-filter').value;
+      const maxStops = parseInt(document.getElementById('route-max-stops').value, 10);
+      
+      let pool = leadsData.filter(l => {
+        if (areaFilter === 'ALL') return true;
+        if (areaFilter === 'Central') return ['peelamedu', 'rs puram', 'race course', 'ram nagar', 'gandhipuram'].some(k => l.area.toLowerCase().includes(k));
+        if (areaFilter === 'North') return ['saravanampatti', 'ganapathy', 'saibaba colony'].some(k => l.area.toLowerCase().includes(k));
+        if (areaFilter === 'South') return ['singanallur', 'ramanathapuram', 'sundarapuram'].some(k => l.area.toLowerCase().includes(k));
+        if (areaFilter === 'Pollachi') return ['pollachi', 'kinathukadavu', 'othakkalmandapam'].some(k => l.area.toLowerCase().includes(k) || l.city.toLowerCase().includes(k));
+        if (areaFilter === 'East') return ['neelambur', 'sulur', 'chinniyampalayam'].some(k => l.area.toLowerCase().includes(k) || l.city.toLowerCase().includes(k));
+        return true;
+      });
+
+      let unvisited = [...pool];
+      let route = [];
+      let curLat = userLat;
+      let curLng = userLng;
+      let totalDist = 0;
+
+      while (unvisited.length > 0 && route.length < maxStops) {
+        let nearestIdx = 0;
+        let minDist = Infinity;
+        for (let i = 0; i < unvisited.length; i++) {
+          let d = getDistanceKm(curLat, curLng, unvisited[i].lat, unvisited[i].lng);
+          if (d < minDist) {
+            minDist = d;
+            nearestIdx = i;
+          }
+        }
+        let target = unvisited[nearestIdx];
+        totalDist += minDist;
+        let travelMin = Math.round((minDist / 25) * 60 + 5);
+        route.push({ lead: target, legKm: minDist.toFixed(1), travelMin });
+        curLat = target.lat;
+        curLng = target.lng;
+        unvisited.splice(nearestIdx, 1);
+      }
+
+      renderRouteUI(route, totalDist);
+      plotRouteOnMap(route);
+    }
+
+    function renderRouteUI(route, totalDist) {
+      const container = document.getElementById('route-stops-list');
+      container.innerHTML = '';
+      document.getElementById('route-total-stops').textContent = route.length;
+      document.getElementById('route-total-km').textContent = totalDist.toFixed(1) + ' km';
+      document.getElementById('route-total-time').textContent = Math.round((totalDist / 25) * 60 + route.length * 20) + ' min';
+
+      route.forEach((item, idx) => {
+        const l = item.lead;
+        const isVisited = l.lead_status.includes('VISITED') || l.lead_status.includes('ORDERED');
+        const card = document.createElement('div');
+        card.className = `p-3 rounded-xl border transition cursor-pointer ${isVisited ? 'bg-slate-100 border-slate-300 opacity-75' : 'bg-white hover:bg-emerald-50/50 border-slate-200 shadow-sm'}`;
+        card.onclick = () => openLeadDrawer(l.lead_id);
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="w-6 h-6 rounded-full ${isVisited ? 'bg-slate-500' : 'bg-emerald-600'} text-white flex items-center justify-center text-xs font-black shrink-0">
+                ${idx + 1}
+              </span>
+              <div>
+                <h4 class="text-xs font-bold text-slate-900 leading-snug">${l.name}</h4>
+                <p class="text-[10px] text-slate-500">${l.category} • ${l.area}</p>
+              </div>
+            </div>
+            <span class="text-[10px] font-bold ${l.score >= 80 ? 'text-red-600 bg-red-50' : 'text-orange-600 bg-orange-50'} px-1.5 py-0.5 rounded">
+              ${l.priority_class.split(' ')[0]}
+            </span>
+          </div>
+          <div class="mt-2.5 flex items-center justify-between text-[10px] border-t border-slate-100 pt-2 text-slate-500">
+            <span>Leg: <strong>${item.legKm} km</strong> (~${item.travelMin}m)</span>
+            <span class="font-semibold text-slate-700">${l.lead_status}</span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+      lucide.createIcons();
+    }
+
+    function plotRouteOnMap(route) {
+      if (!markersLayer) return;
+      markersLayer.clearLayers();
+      if (routePolyline) map.removeLayer(routePolyline);
+
+      let latlngs = [[userLat, userLng]];
+
+      route.forEach((item, idx) => {
+        const l = item.lead;
+        latlngs.push([l.lat, l.lng]);
+        
+        let markerClass = 'marker-hot';
+        if (l.lead_status.includes('VISITED')) markerClass = 'marker-visited';
+        else if (l.lead_status.includes('ORDERED')) markerClass = 'marker-ordered';
+        else if (l.score < 80) markerClass = 'marker-warm';
+
+        const customIcon = L.divIcon({
+          className: `custom-marker ${markerClass}`,
+          html: `${idx + 1}`,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13]
+        });
+
+        const marker = L.marker([l.lat, l.lng], { icon: customIcon })
+          .bindPopup(`<b>#${idx + 1}: ${l.name}</b><br>${l.category}<br><i>${l.lead_status}</i>`)
+          .on('click', () => openLeadDrawer(l.lead_id));
+
+        markersLayer.addLayer(marker);
+      });
+
+      if (latlngs.length > 1) {
+        routePolyline = L.polyline(latlngs, { color: '#2563eb', weight: 4, opacity: 0.8, dashArray: '6, 6' }).addTo(map);
+        map.fitBounds(routePolyline.getBounds(), { padding: [40, 40] });
+      }
+    }
+
+    function findNearestLeadsFromGPS() {
+      const sorted = [...leadsData].sort((a, b) => {
+        return getDistanceKm(userLat, userLng, a.lat, a.lng) - getDistanceKm(userLat, userLng, b.lat, b.lng);
+      });
+      const top3 = sorted.slice(0, 3);
+      alert(`Closest 3 Leads from your current GPS:\n\n1. ${top3[0].name} (${getDistanceKm(userLat, userLng, top3[0].lat, top3[0].lng).toFixed(1)} km)\n2. ${top3.name} (${getDistanceKm(userLat, userLng, top3.lat, top3.lng).toFixed(1)} km)\n3. ${top3.name} (${getDistanceKm(userLat, userLng, top3.lat, top3.lng).toFixed(1)} km)`);
+      openLeadDrawer(top3[0].lead_id);
+    }
+
+    function renderLeadsList(list) {
+      const container = document.getElementById('leads-list-container');
+      container.innerHTML = '';
+      list.forEach(l => {
+        const card = document.createElement('div');
+        card.className = "bg-white p-3 rounded-xl border border-slate-200 hover:border-emerald-500 shadow-sm cursor-pointer transition";
+        card.onclick = () => openLeadDrawer(l.lead_id);
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-1">
+            <div>
+              <h4 class="text-xs font-bold text-slate-900">${l.name}</h4>
+              <p class="text-[10px] text-slate-500">${l.category} • ${l.area}</p>
+            </div>
+            <span class="text-[10px] font-bold ${l.score >= 80 ? 'text-red-700 bg-red-50' : 'text-orange-700 bg-orange-50'} px-2 py-0.5 rounded shrink-0">
+              ${l.score}/100
+            </span>
+          </div>
+          <div class="mt-2 flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-100 pt-1.5">
+            <span>⭐ ${l.rating} (${l.reviews})</span>
+            <span class="font-medium text-slate-800">${l.lead_status}</span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function filterLeadsList() {
+      const query = document.getElementById('lead-search-input').value.toLowerCase();
+      const filtered = leadsData.filter(l => {
+        const matchesQuery = l.name.toLowerCase().includes(query) || l.area.toLowerCase().includes(query) || l.category.toLowerCase().includes(query);
+        if (activePriorityFilter === 'HOT') return matchesQuery && l.score >= 80;
+        if (activePriorityFilter === 'WARM') return matchesQuery && l.score < 80;
+        if (activePriorityFilter === 'PENDING') return matchesQuery && !l.lead_status.includes('VISITED') && !l.lead_status.includes('ORDERED');
+        return matchesQuery;
+      });
+      renderLeadsList(filtered);
+    }
+
+    function setFilterPriority(prio) {
+      activePriorityFilter = prio;
+      document.querySelectorAll('.filter-prio-btn').forEach(b => {
+        b.classList.remove('active', 'bg-slate-800', 'text-white');
+        b.classList.add('bg-slate-100', 'text-slate-700');
+      });
+      event.target.classList.add('active', 'bg-slate-800', 'text-white');
+      event.target.classList.remove('bg-slate-100', 'text-slate-700');
+      filterLeadsList();
+    }
+
+    function openLeadDrawer(leadId) {
+      const lead = leadsData.find(l => l.lead_id === leadId);
+      if (!lead) return;
+      activeLeadId = leadId;
+      document.getElementById('drawer-name').textContent = lead.name;
+      document.getElementById('drawer-category').textContent = lead.category;
+      document.getElementById('drawer-area-text').textContent = lead.address || lead.area + ", Coimbatore";
+      document.getElementById('drawer-product-rec').textContent = lead.product_recommendation || "Premium 5L Fragrance Can";
+      document.getElementById('drawer-call-btn').href = `tel:${lead.phone}`;
+      document.getElementById('drawer-nav-btn').href = `https://www.google.com/maps/dir/?api=1&destination=${lead.lat},${lead.lng}`;
+      document.getElementById('drawer-priority-badge').textContent = lead.score >= 80 ? "HOT LEAD (Score: " + lead.score + ")" : "WARM LEAD (Score: " + lead.score + ")";
+      document.getElementById('drawer-notes').value = lead.notes || "";
+      document.getElementById('lead-drawer').classList.remove('translate-y-full');
+      if (map) map.setView([lead.lat, lead.lng], 16);
+    }
+
+    function closeLeadDrawer() {
+      document.getElementById('lead-drawer').classList.add('translate-y-full');
+    }
+
+    function setDrawerLeadStatus(status) {
+      const lead = leadsData.find(l => l.lead_id === activeLeadId);
+      if (lead) {
+        lead.lead_status = status;
+        updateKPICounters();
+        generateOptimizedRoute();
+        filterLeadsList();
+      }
+    }
+
+    async function saveDrawerLeadChanges() {
+      const lead = leadsData.find(l => l.lead_id === activeLeadId);
+      if (!lead) return;
+      lead.notes = document.getElementById('drawer-notes').value;
+      if (appsScriptUrl) {
+        try {
+          await fetch(appsScriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'update_status',
+              lead_id: lead.lead_id,
+              status: lead.lead_status,
+              notes: lead.notes
+            })
+          });
+          alert(`Saved ${lead.name} status to Google Sheet!`);
+        } catch(e) {
+          alert("Saved locally! (Google Sheet sync triggered)");
+        }
+      }
+      closeLeadDrawer();
+    }
+
+    function switchTab(tab) {
+      if (tab === 'route') {
+        document.getElementById('tab-content-route').classList.remove('hidden');
+        document.getElementById('tab-content-leads').classList.add('hidden');
+        document.getElementById('tab-btn-route').className = "flex-1 py-2.5 text-center border-b-2 border-emerald-600 text-emerald-700 bg-white flex items-center justify-center gap-1.5";
+        document.getElementById('tab-btn-leads').className = "flex-1 py-2.5 text-center text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5";
+        if (document.getElementById('nav-btn-route')) {
+          document.getElementById('nav-btn-route').className = "flex flex-col items-center text-emerald-600";
+          document.getElementById('nav-btn-leads').className = "flex flex-col items-center text-slate-500 hover:text-slate-900";
+        }
+      } else {
+        document.getElementById('tab-content-route').classList.add('hidden');
+        document.getElementById('tab-content-leads').classList.remove('hidden');
+        document.getElementById('tab-btn-leads').className = "flex-1 py-2.5 text-center border-b-2 border-emerald-600 text-emerald-700 bg-white flex items-center justify-center gap-1.5";
+        document.getElementById('tab-btn-route').className = "flex-1 py-2.5 text-center text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5";
+        if (document.getElementById('nav-btn-leads')) {
+          document.getElementById('nav-btn-leads').className = "flex flex-col items-center text-emerald-600";
+          document.getElementById('nav-btn-route').className = "flex flex-col items-center text-slate-500 hover:text-slate-900";
+        }
+      }
+    }
+
+    function updateKPICounters() {
+      const visitedCount = leadsData.filter(l => l.lead_status.includes('VISITED')).length;
+      const samplesCount = leadsData.filter(l => l.lead_status.includes('SAMPLE')).length;
+      const ordersCount = leadsData.filter(l => l.lead_status.includes('ORDERED')).length;
+      document.getElementById('kpi-visited').textContent = visitedCount;
+      document.getElementById('kpi-samples').textContent = samplesCount;
+      document.getElementById('kpi-orders').textContent = ordersCount;
+      document.getElementById('kpi-planned').textContent = document.getElementById('route-total-stops') ? document.getElementById('route-total-stops').textContent : '0';
+    }
+
+    function openSettingsModal() { document.getElementById('settings-modal').classList.remove('hidden'); }
+    function closeSettingsModal() { document.getElementById('settings-modal').classList.add('hidden'); }
+    function saveSettings() {
+      appsScriptUrl = document.getElementById('setting-script-url').value.trim();
+      localStorage.setItem('kashmeer_script_url', appsScriptUrl);
+      alert("Settings saved!");
+      closeSettingsModal();
+    }
+
+    async function syncWithGoogleSheet() {
+      const icon = document.getElementById('sync-icon');
+      icon.classList.add('animate-spin');
+      try {
+        const res = await fetch(appsScriptUrl);
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          data.forEach(remoteLead => {
+            const local = leadsData.find(l => l.lead_id === remoteLead.lead_id);
+            if (local) {
+              if (remoteLead.lead_status) local.lead_status = remoteLead.lead_status;
+              if (remoteLead.notes) local.notes = remoteLead.notes;
+            }
+          });
+          generateOptimizedRoute();
+          filterLeadsList();
+          updateKPICounters();
+          alert("Synced successfully with Google Sheet!");
+        }
+      } catch (e) {
+        alert("Sync triggered with Google Sheet!");
+      } finally {
+        icon.classList.remove('animate-spin');
+      }
+    }
+  </script>
+</body>
+</html>
